@@ -1,0 +1,165 @@
+---
+title: "Total Cholesterol and Alzheimer's Disease - Two Sample Mendelian Randomization"
+author: "Shae Mclaughlin"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+This study aims to estimate the causal effect of total cholesterol (TC) levels on Alzheimer's disease (AD) using MR Egger, weighted median estimators, fixed effects inverse variance weighted analysis, and weighted mode estimators, using the TwoSampleMR R package.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r packages, include=FALSE}
+library(tidyverse) 
+library(TwoSampleMR)
+library(rmarkdown)
+```
+
+```{r files, include=FALSE}
+AD_file_path <- "/Users/shaemariemclaughlin/Desktop/MR_Data/AD.tsv" 
+TC_file_path <- "/Users/shaemariemclaughlin/Desktop/MR_Data/TC.tsv"
+```
+
+## Exposure: Total Cholesterol (TC)
+
+The exposure in this two sample Mendelian randomization is total cholesterol (TC) (Willer et al., 2013).
+
+```{r formatting exposure data, include=FALSE}
+exposure_data <- read.csv(file = TC_file_path, sep = "\t")
+exposure_formatted <- format_data(exposure_data, 
+                                  type ="exposure", 
+                                  snps = NULL, 
+                                  header = TRUE, 
+                                  phenotype_col = "TRAIT", 
+                                  snp_col = "SNP",
+                                  beta_col = "BETA", 
+                                  se_col = "SE", 
+                                  eaf_col = "AF", 
+                                  effect_allele_col = "ALT", 
+                                  other_allele_col = "REF", 
+                                  pval_col = "P", 
+                                  z_col = "Z", 
+                                  chr_col = "CHROM", 
+                                  pos_col = "POS", 
+                                  samplesize_col = "N")
+```
+
+```{r clumping exposure data, include=FALSE}
+exposure_clumped <- exposure_formatted %>%
+filter(pval.exposure < 1e-6) %>% clump_data(., )
+```
+
+------------------------------------------------------------------------
+
+## Outcome: Alzheimer's Disease (AD)
+
+The outcome of interest in this two sample Mendelian randomization is Alzheimer's disease (AD) (Kunkle et al., 2019).
+
+```{r formatting outcome data, include=FALSE}
+outcome_data <- read.csv(file = AD_file_path, sep = "\t")
+outcome_formatted <- format_data(outcome_data, 
+                                  type ="outcome", 
+                                  snps = NULL, 
+                                  header = TRUE, 
+                                  phenotype_col = "TRAIT", 
+                                  snp_col = "SNP",
+                                  beta_col = "BETA", 
+                                  se_col = "SE", 
+                                  eaf_col = "AF", 
+                                  effect_allele_col = "ALT", 
+                                  other_allele_col = "REF", 
+                                  pval_col = "P", 
+                                  z_col = "Z", 
+                                  chr_col = "CHROM", 
+                                  pos_col = "POS", 
+                                  samplesize_col = "N")
+```
+
+```{r extracting outcome data, include=FALSE}
+outcome_clumped <- filter(outcome_formatted, SNP %in% exposure_clumped$SNP)
+```
+
+```{r harmonizing data, include=FALSE}
+harmonized_data <- harmonise_data(exposure_dat = exposure_clumped, 
+                                  outcome_dat = outcome_clumped)
+```
+
+------------------------------------------------------------------------
+
+## Mendelian Randomization
+
+```{r performing Mendelian randomization, echo=FALSE, message=FALSE}
+results <- mr(harmonized_data,method_list = c("mr_egger_regression",
+                                              "mr_weighted_median",
+                                              "mr_ivw_fe", 
+                                              "mr_weighted_mode"))
+
+#Setting plot theme 
+theme_set(theme_bw())
+
+#Scatter plot
+scatter <- mr_scatter_plot(results, harmonized_data)
+scatter[[1]]
+
+#Results table
+knitr::kable(results[,3:9], col.names = c("Outcome", "Exposure", "Method", "NSNP", "B", "SE", "P-Value"))
+```
+
+------------------------------------------------------------------------
+
+## Sensitivity Analysis
+
+### Heterogeneity Statistics
+
+```{r getting heterogeneity statistics, echo=FALSE, warning=FALSE}
+heterogeneity_results <- mr_heterogeneity(harmonized_data) 
+knitr::kable(heterogeneity_results[,3:8], col.names = c("Outcome", "Exposure", "Method", "Q", "Q (DF)", "Q P-Value"))
+```
+
+### Horizontal Pleiotropy
+
+```{r performing horizontal pleiotropy test, echo=FALSE, warning=FALSE}
+hp_results <- mr_pleiotropy_test(harmonized_data) 
+knitr::kable(hp_results[,3:7], col.names = c("Outcome", "Exposure", "Egger Intercept", "SE", "P-Value"))
+```
+
+### Single SNP Analysis
+
+```{r performing single SNP analysis, echo=FALSE, warning=FALSE}
+singlesnp_results <- mr_singlesnp(harmonized_data)
+
+#Forest plot
+forest <- mr_forest_plot(singlesnp_results) 
+forest[[1]]
+
+#Funnel plot 
+funnel <- mr_funnel_plot(singlesnp_results) 
+funnel[[1]]
+
+#Results table
+knitr::kable(singlesnp_results[,c(1, 2, 5, 6, 7, 8, 9)], col.names = c("Exposure", "Outcome", "Sample Size", "SNP", "B", "SE", "P-Value"))
+```
+
+### Leave-One-Out Analysis
+
+```{r performing leave-one-out analysis, echo=FALSE, warning=FALSE}
+loo_results <- mr_leaveoneout(harmonized_data)
+
+#Leave-one-out plot
+loo <- mr_leaveoneout_plot(loo_results) 
+loo[[1]]
+
+#Results table
+knitr::kable(loo_results[,c(1, 2, 5, 6, 7, 8, 9)], col.names = c("Exposure", "Outcome", "Sample Size", "SNP", "B", "SE", "P-Value"))
+```
+
+## References
+
+1.  Hemani G, Zheng J, Elsworth B, Wade KH, Baird D, Haberland V, Laurin C, Burgess S, Bowden J, Langdon R, Tan VY, Yarmolinsky J, Shihab HA, Timpson NJ, Evans DM, Relton C, Martin RM, Davey Smith G, Gaunt TR, Haycock PC, The MR-Base Collaboration. The MR-Base platform supports systematic causal inference across the human phenome. eLife 2018;7:e34408. <https://doi.org/10.7554/eLife.34408>
+
+2.  Kunkle, B. W., Grenier-Boley, B., Sims, R., Bis, J. C., Damotte, V., Naj, A. C., Boland, A., Vronskaya, M., van der Lee, S. J., Amlie-Wolf, A., Bellenguez, C., Frizatti, A., Chouraki, V., Martin, E. R., Sleegers, K., Badarinarayan, N., Jakobsdottir, J., Hamilton-Nelson, K. L., Moreno-Grau, S., Olaso, R., ... Genetic and Environmental Risk in AD/Defining Genetic, Polygenic and Environmental Risk for Alzheimer's Disease Consortium (GERAD/PERADES), (2019). Genetic meta-analysis of diagnosed Alzheimer's disease identifies new risk loci and implicates Aβ, tau, immunity and lipid processing. *Nature genetics*, *51*(3), 414--430. <https://doi.org/10.1038/s41588-019-0358-2>
+
+3.  Willer, C. J., Schmidt, E. M., Sengupta, S., Peloso, G. M., Gustafsson, S., Kanoni, S., Ganna, A., Chen, J., Buchkovich, M. L., Mora, S., Beckmann, J. S., Bragg-Gresham, J. L., Chang, H. Y., Demirkan, A., Den Hertog, H. M., Do, R., Donnelly, L. A., Ehret, G. B., Esko, T., Feitosa, M. F., ... Global Lipids Genetics Consortium (2013). Discovery and refinement of loci associated with lipid levels. *Nature genetics*, *45*(11), 1274--1283. <https://doi.org/10.1038/ng.2797>
