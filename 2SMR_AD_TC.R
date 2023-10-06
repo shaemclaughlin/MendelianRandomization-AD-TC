@@ -1,7 +1,8 @@
 #Packages 
-library(tidyverse) 
+library(tidyverse)
 library(TwoSampleMR)
 library(rmarkdown)
+library(RadialMR)
 
 #Files 
 AD_file_path <- "/Users/shaemariemclaughlin/Desktop/MR_Data/AD.tsv" 
@@ -127,4 +128,115 @@ funnel[[1]]
 loo <- mr_leaveoneout_plot(loo_results) 
 loo[[1]]
 
-#Complete
+#Radial formatting
+radial_data <- harmonized_data %>% filter(mr_keep == TRUE) %>% dat_to_RadialMR()
+str(radial_data)
+radial_mr_data <- radial_data$TC.AD
+
+#Radial IVW
+bonff = 0.05/nrow(radial_mr_data) #Bonferroni correction to account for multiple testing
+radial_ivw_results <- ivw_radial(radial_mr_data, alpha = bonff)
+radial_ivw_results_data <- radial_ivw_results$data
+
+#Getting radial IVW outlier snps
+
+outlier_snps <- subset(radial_ivw_results_data, Outliers == "Outlier")$SNP
+outlier_snps
+
+#Radial Egger
+radial_egger_results <- egger_radial(radial_mr_data, alpha = bonff)
+radial_egger_results
+radial_egger_results_data <- radial_egger_results$data
+
+
+#Getting radial Egger outlier snps
+egger_outlier_snps <- subset(radial_egger_results_data, Outliers == "Outlier")$SNP
+egger_outlier_snps
+
+#Radial plots
+ivw_radial_plot <- plot_radial(radial_ivw_results, radial_scale = FALSE, show_outliers = FALSE)
+
+egger_radial_plot <- plot_radial(radial_egger_results, radial_scale = FALSE, show_outliers = FALSE)
+
+cowplot::plot_grid(
+  ivw_radial_plot + coord_fixed(ratio=0.25) + theme(legend.position = 'bottom'), 
+  egger_radial_plot + theme(legend.position = 'bottom'), 
+  align = 'h'
+)
+
+#Removing outlier snps from harmonized data
+harmonized_data_no_outliers <- harmonized_data[!harmonized_data$SNP %in% c("rs1883025", 
+                                                                           "rs6504872", 
+                                                                           "rs7412" , 
+                                                                           "rs75687619",  
+                                                                           "rs8103315"),]
+
+#Performing Mendelian randomization with outliers removed
+results <- mr(harmonized_data_no_outliers,method_list = c("mr_egger_regression", 
+                                              "mr_weighted_median",
+                                              "mr_ivw_fe", 
+                                              "mr_weighted_mode")) 
+knitr::kable(results[,3:9], col.names = c("Outcome", 
+                                          "Exposure", 
+                                          "Method", 
+                                          "NSNP", 
+                                          "B", 
+                                          "SE", 
+                                          "P-Value"))
+
+#Getting heterogeneity statistics 
+heterogeneity_results <- mr_heterogeneity(harmonized_data_no_outliers) 
+knitr::kable(heterogeneity_results[,3:8], col.names = c("Outcome", 
+                                                        "Exposure", 
+                                                        "Method", 
+                                                        "Q", 
+                                                        "Q (DF)", 
+                                                        "Q P-Value"))
+
+#Performing horizontal pleiotropy test 
+hp_results <- mr_pleiotropy_test(harmonized_data_no_outliers) 
+knitr::kable(hp_results[,3:7], col.names = c("Outcome", 
+                                             "Exposure", 
+                                             "Egger Intercept", 
+                                             "SE", 
+                                             "P-Value"))
+
+#Performing leave one out Mendelian randomization 
+loo_results <- mr_leaveoneout(harmonized_data_no_outliers)
+knitr::kable(loo_results[,c(1, 2, 5, 6, 7, 8, 9)], col.names = c("Exposure", 
+                                                                 "Outcome", 
+                                                                 "Sample Size", 
+                                                                 "SNP", 
+                                                                 "B", 
+                                                                 "SE", 
+                                                                 "P-Value"))
+
+#Performing single snp Mendelian randomization 
+singlesnp_results <- mr_singlesnp(harmonized_data_no_outliers)
+knitr::kable(singlesnp_results[,c(1, 2, 5, 6, 7, 8, 9)], col.names = c("Exposure", 
+                                                                       "Outcome", 
+                                                                       "Sample Size", 
+                                                                       "SNP", 
+                                                                       "B", 
+                                                                       "SE", 
+                                                                       "P-Value"))
+
+#Setting plot theme 
+theme_set(theme_bw())
+
+#Scatter plot 
+scatter <- mr_scatter_plot(results, harmonized_data_no_outliers)
+scatter[[1]]
+
+#Forest plot 
+forest <- mr_forest_plot(singlesnp_results) 
+forest[[1]]
+
+#Funnel plot 
+funnel <- mr_funnel_plot(singlesnp_results) 
+funnel[[1]]
+
+#Leave-one-out plot 
+loo <- mr_leaveoneout_plot(loo_results) 
+loo[[1]]
+
