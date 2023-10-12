@@ -139,9 +139,10 @@ radial_ivw_results <- ivw_radial(radial_mr_data, alpha = bonff)
 radial_ivw_results_data <- radial_ivw_results$data
 
 #Getting radial IVW outlier snps
+radial_ivw_outlier_snps <- radial_ivw_results$outliers
 
-outlier_snps <- subset(radial_ivw_results_data, Outliers == "Outlier")$SNP
-outlier_snps
+#outlier snp table
+knitr::kable(radial_ivw_outlier_snps[], col.names = c("Outlier SNPs", "Q Statistic", "P-Value"))
 
 #Radial Egger
 radial_egger_results <- egger_radial(radial_mr_data, alpha = bonff)
@@ -150,8 +151,10 @@ radial_egger_results_data <- radial_egger_results$data
 
 
 #Getting radial Egger outlier snps
-egger_outlier_snps <- subset(radial_egger_results_data, Outliers == "Outlier")$SNP
-egger_outlier_snps
+radial_egger_outlier_snps <- radial_egger_results$outliers
+
+#outlier snp table
+knitr::kable(radial_egger_outlier_snps[], col.names = c("Outlier SNPs", "Q Statistic", "P-Value"))
 
 #Radial plots
 ivw_radial_plot <- plot_radial(radial_ivw_results, radial_scale = FALSE, show_outliers = FALSE)
@@ -164,11 +167,17 @@ cowplot::plot_grid(
   align = 'h'
 )
 
-#Removing outlier snps from harmonized data
-harmonized_data_no_outliers <- harmonized_data[!harmonized_data$SNP %in% c("rs1883025", 
+#joining outlier snps
+combined_outliers <- bind_rows(radial_egger_outlier_snps, radial_ivw_outlier_snps) %>% distinct(SNP, .keep_all = TRUE)
+
+#removing outlier snps from harmonized data
+harmonized_data_no_outliers <- harmonized_data[!harmonized_data$SNP %in% c("rs10468017", 
+                                                                           "rs1883025", 
+                                                                           "rs515135", 
                                                                            "rs6504872", 
-                                                                           "rs7412" , 
-                                                                           "rs75687619",  
+                                                                           "rs6544713", 
+                                                                           "rs7412", 
+                                                                           "rs75687619", 
                                                                            "rs8103315"),]
 
 #Performing Mendelian randomization with outliers removed
