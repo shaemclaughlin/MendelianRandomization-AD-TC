@@ -4,6 +4,8 @@ author: "Shae Mclaughlin"
 output:
   word_document: default
   pdf_document: default
+  html_document:
+    df_print: paged
 ---
 
 This study aims to estimate the causal effect of total cholesterol (TC) levels on Alzheimer's disease (AD) using MR Egger, weighted median estimators, fixed effects inverse variance weighted analysis, and weighted mode estimators, using the TwoSampleMR R package.
@@ -16,6 +18,7 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse) 
 library(TwoSampleMR)
 library(rmarkdown)
+library(RadialMR)
 ```
 
 ```{r files, include=FALSE}
@@ -52,8 +55,6 @@ exposure_clumped <- exposure_formatted %>%
 filter(pval.exposure < 1e-6) %>% clump_data(., )
 ```
 
-------------------------------------------------------------------------
-
 ## Outcome: Alzheimer's Disease (AD)
 
 The outcome of interest in this two sample Mendelian randomization is Alzheimer's disease (AD) (Kunkle et al., 2019).
@@ -87,8 +88,6 @@ harmonized_data <- harmonise_data(exposure_dat = exposure_clumped,
                                   outcome_dat = outcome_clumped)
 ```
 
-------------------------------------------------------------------------
-
 ## Mendelian Randomization
 
 ```{r performing Mendelian randomization, echo=FALSE, message=FALSE}
@@ -107,8 +106,6 @@ scatter[[1]]
 #Results table
 knitr::kable(results[,3:9], col.names = c("Outcome", "Exposure", "Method", "NSNP", "B", "SE", "P-Value"))
 ```
-
-------------------------------------------------------------------------
 
 ## Sensitivity Analysis
 
@@ -138,9 +135,6 @@ forest[[1]]
 #Funnel plot 
 funnel <- mr_funnel_plot(singlesnp_results) 
 funnel[[1]]
-
-#Results table
-knitr::kable(singlesnp_results[,c(1, 2, 5, 6, 7, 8, 9)], col.names = c("Exposure", "Outcome", "Sample Size", "SNP", "B", "SE", "P-Value"))
 ```
 
 ### Leave-One-Out Analysis
@@ -151,9 +145,106 @@ loo_results <- mr_leaveoneout(harmonized_data)
 #Leave-one-out plot
 loo <- mr_leaveoneout_plot(loo_results) 
 loo[[1]]
+```
 
-#Results table
-knitr::kable(loo_results[,c(1, 2, 5, 6, 7, 8, 9)], col.names = c("Exposure", "Outcome", "Sample Size", "SNP", "B", "SE", "P-Value"))
+## Radial Mendelian Randomization
+
+```{r formatting data for radial MR, echo=FALSE, warning= FALSE, message = FALSE}
+radial_data <- harmonized_data %>% filter(mr_keep == TRUE) %>% dat_to_RadialMR()
+radial_mr_data <- radial_data$TC.AD
+```
+
+```{r performing radial IVW, echo = FALSE, warning = FALSE, include=FALSE}
+bonff = 0.05/nrow(radial_mr_data) #Bonferroni correction to account for multiple analyses
+radial_ivw_results <- ivw_radial(radial_mr_data, alpha = bonff)
+radial_ivw_results_data <- radial_ivw_results$data
+radial_ivw_outlier_snps <- radial_ivw_results$outliers
+
+```
+
+### Radial IVW Outlier SNPs
+
+```{r getting radial IVW outlier snps, echo = FALSE}
+#outlier snp table
+knitr::kable(radial_ivw_outlier_snps[], col.names = c("Outlier SNPs", "Q Statistic", "P-Value"))
+```
+
+```{r performing radial egger, echo = FALSE, warning = FALSE, message=FALSE, include = FALSE}
+radial_egger_results <- egger_radial(radial_mr_data, alpha = bonff)
+radial_egger_results_data <- radial_egger_results$data
+radial_egger_outlier_snps <- radial_egger_results$outliers
+```
+
+### Radial Egger Outlier SNPs
+
+Eight SNPs were identified as outliers.
+
+```{r getting radial egger outlier snps, echo = FALSE, warning = FALSE}
+#outlier snp table
+knitr::kable(radial_egger_outlier_snps[], col.names = c("Outlier SNPs", "Q Statistic", "P-Value"))
+```
+
+### Radial IVW and Egger Plots
+
+```{r radial plots, echo = FALSE}
+ivw_radial_plot <- plot_radial(radial_ivw_results, radial_scale = FALSE, show_outliers = FALSE)
+
+egger_radial_plot <- plot_radial(radial_egger_results, radial_scale = FALSE, show_outliers = FALSE)
+
+cowplot::plot_grid(
+  ivw_radial_plot + coord_fixed(ratio=0.25) + theme(legend.position = 'bottom'),
+  egger_radial_plot + theme(legend.position = 'bottom'),
+  align = 'h'
+)
+```
+
+## Mendelian Randomization Post-Outlier SNP Removal
+
+Mendelian randomization analysis was again performed after removing eight outlier SNPs identified in Radial IVW and Radial Egger analysis. None of the Mendelian randomization methods employed found a significant causal effect of TC on AD. The Egger estimate returned a p-value of 0.3695. The weighted median estimate returned a p-value of 0.4617. The inverse variance weighted with fixed effects estimate returned a p-value of 0.4681. The weighted mode estimate returned a p-value of 0.9302. The heterogeneity test of the Egger estimate returned a p-value of 0.0019. The heterogeneity test of inverse weighted variance estimate returned a p-value of 0.001384. The test for horizontal pleiotropy returned a p-value of 0.1585.
+
+```{r performing Mendelian randomization post-outlier SNP removal, echo = FALSE, message=FALSE}
+#joining outlier snps
+combined_outliers <- bind_rows(radial_egger_outlier_snps, radial_ivw_outlier_snps) %>% distinct(SNP, .keep_all = TRUE)
+
+#removing outlier snps from harmonized data
+harmonized_data_no_outliers <- harmonized_data[!harmonized_data$SNP %in% c("rs10468017", "rs1883025", "rs515135", "rs6504872", "rs6544713", "rs7412", "rs75687619", "rs8103315"),]
+
+#Mendelian randomization
+results <- mr(harmonized_data_no_outliers,method_list = c("mr_egger_regression", 
+                                              "mr_weighted_median",
+                                              "mr_ivw_fe", 
+                                              "mr_weighted_mode"))
+
+#Mendelian randomization results table
+knitr::kable(results[,3:9], col.names = c("Outcome", 
+                                          "Exposure", 
+                                          "Method", 
+                                          "NSNP", 
+                                          "B", 
+                                          "SE", 
+                                          "P-Value"))
+
+#scatter plot
+scatter <- mr_scatter_plot(results, harmonized_data_no_outliers)
+scatter[[1]]
+
+#getting heterogeneity statistics 
+heterogeneity_results <- mr_heterogeneity(harmonized_data_no_outliers) 
+knitr::kable(heterogeneity_results[,3:8], col.names = c("Outcome", 
+                                                        "Exposure", 
+                                                        "Method", 
+                                                        "Q", 
+                                                        "Q (DF)", 
+                                                        "Q P-Value"))
+
+#performing horizontal pleiotropy test 
+hp_results <- mr_pleiotropy_test(harmonized_data_no_outliers) 
+knitr::kable(hp_results[,3:7], col.names = c("Outcome", 
+                                             "Exposure", 
+                                             "Egger Intercept", 
+                                             "SE", 
+                                             "P-Value"))
+
 ```
 
 ## References
